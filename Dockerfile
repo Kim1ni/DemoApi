@@ -50,8 +50,6 @@ WORKDIR /project/${KOBWEB_APP_ROOT}
 
 # Configure Gradle memory (optional, adjust as needed)
 # Consider externalizing or caching the ~/.gradle directory for faster builds
-RUN mkdir -p ~/.gradle && \
-    echo "org.gradle.jvmargs=-Xmx256m" >> ~/.gradle/gradle.properties
 
 # Build and export the site
 # Consider caching Gradle dependencies before this step for faster rebuilds
