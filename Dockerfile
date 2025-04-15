@@ -8,7 +8,7 @@ ARG KOBWEB_CLI_VERSION=0.9.18
 
 #-----------------------------------------------------------------------------
 # Build Stage: Build and export the Kobweb site
-FROM openjdk:${JAVA_VERSION}-jdk as export
+FROM openjdk:11-jdk as export
 
 ARG KOBWEB_APP_ROOT
 ARG KOBWEB_CLI_VERSION
@@ -62,7 +62,7 @@ RUN kobweb export --notty
 
 #-----------------------------------------------------------------------------
 # Final Stage: Run the Kobweb server
-FROM openjdk:${JAVA_VERSION}-jre-slim as run
+FROM openjdk:11-jre-slim as run
 
 ARG KOBWEB_APP_ROOT
 
