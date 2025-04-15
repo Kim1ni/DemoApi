@@ -1,56 +1,80 @@
 #-----------------------------------------------------------------------------
-# Variables shared across multiple stages (they need to be explicitly opted
-# into each stage by being declaring there too, but their values need only be
-# specified once).
+# Variables shared across multiple stages
 ARG KOBWEB_APP_ROOT="site"
+# Define versions centrally
+ARG JAVA_VERSION=17
+ARG NODE_MAJOR_VERSION=20
+ARG KOBWEB_CLI_VERSION=0.9.18
 
 #-----------------------------------------------------------------------------
-# Create an intermediate stage which builds and exports our site. In the
-# final stage, we'll only extract what we need from this stage, saving a lot
-# of space.
-FROM openjdk:11-jdk as export
+# Build Stage: Build and export the Kobweb site
+FROM openjdk:${JAVA_VERSION}-jdk as export
 
-ENV KOBWEB_CLI_VERSION=0.9.12
 ARG KOBWEB_APP_ROOT
+ARG KOBWEB_CLI_VERSION
+ARG NODE_MAJOR_VERSION
 
-# Copy the project code to an arbitrary subdir so we can install stuff in the
-# Docker container root without worrying about clobbering project files.
-COPY . /project
+ENV KOBWEB_CLI_VERSION=${KOBWEB_CLI_VERSION}
 
-# Update and install required OS packages to continue
-# Note: Playwright is a system for running browsers, and here we use it to
-# install Chromium.
+# Install necessary OS packages, Node.js (LTS), and potentially Playwright
+# Combine steps and add cleanup to reduce layer size.
 RUN apt-get update \
-    && apt-get install -y curl gnupg unzip wget \
-    && curl -sL https://deb.nodesource.com/setup_19.x | bash - \
+    && apt-get install -y --no-install-recommends curl gnupg unzip wget ca-certificates \
+    # Install Node.js (Current LTS)
+    && curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR_VERSION}.x | bash - \
     && apt-get install -y nodejs \
-    && npm init -y \
-    && npx playwright install --with-deps chromium
+    # --- Optional: Playwright Installation ---
+    # If you NEED Playwright for your build (e.g., JS pre-rendering):
+    # 1. Keep nodejs install above.
+    # 2. Uncomment the following lines:
+    # && npm install -g npm@latest \ # Good practice to update npm
+    # && npx playwright install --with-deps chromium \
+    # --- End Optional Playwright ---
+    # Cleanup APT cache
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# Fetch the latest version of the Kobweb CLI
-RUN wget https://github.com/varabyte/kobweb-cli/releases/download/v${KOBWEB_CLI_VERSION}/kobweb-${KOBWEB_CLI_VERSION}.zip \
-    && unzip kobweb-${KOBWEB_CLI_VERSION}.zip \
-    && rm kobweb-${KOBWEB_CLI_VERSION}.zip
+# Fetch the specified version of the Kobweb CLI
+RUN wget "https://github.com/varabyte/kobweb-cli/releases/download/v${KOBWEB_CLI_VERSION}/kobweb-${KOBWEB_CLI_VERSION}.zip" \
+    && unzip "kobweb-${KOBWEB_CLI_VERSION}.zip" \
+    && rm "kobweb-${KOBWEB_CLI_VERSION}.zip"
 
+# Add Kobweb CLI to PATH
 ENV PATH="/kobweb-${KOBWEB_CLI_VERSION}/bin:${PATH}"
 
+# Copy project code
+COPY . /project
+
+# Set workdir AFTER copying project
 WORKDIR /project/${KOBWEB_APP_ROOT}
 
-# Decrease Gradle memory usage to avoid OOM situations in tight environments
-# (many free Cloud tiers only give you 512M of RAM). The following amount
-# should be more than enough to build and export our site.
-RUN mkdir ~/.gradle && \
+# Configure Gradle memory (optional, adjust as needed)
+# Consider externalizing or caching the ~/.gradle directory for faster builds
+RUN mkdir -p ~/.gradle && \
     echo "org.gradle.jvmargs=-Xmx256m" >> ~/.gradle/gradle.properties
 
+# Build and export the site
+# Consider caching Gradle dependencies before this step for faster rebuilds
+# e.g., COPY build.gradle.kts gradlew ./
+#       RUN ./gradlew dependencies
+#       COPY . .
 RUN kobweb export --notty
 
 #-----------------------------------------------------------------------------
-# Create the final stage, which contains just enough bits to run the Kobweb
-# server.
-FROM openjdk:11-jre-slim as run
+# Final Stage: Run the Kobweb server
+FROM openjdk:${JAVA_VERSION}-jre-slim as run
 
 ARG KOBWEB_APP_ROOT
 
-COPY --from=export /project/${KOBWEB_APP_ROOT}/.kobweb .kobweb
+# Copy only the necessary exported artifacts from the build stage
+COPY --from=export /project/${KOBWEB_APP_ROOT}/.kobweb /.kobweb
 
-ENTRYPOINT .kobweb/server/start.sh
+# Expose the default Kobweb port (adjust if needed)
+EXPOSE 8080
+
+# Set the entrypoint to start the server
+ENTRYPOINT [".kobweb/server/start.sh"]
+
+# Optional: Add a healthcheck if your server supports it
+# HEALTHCHECK --interval=15s --timeout=3s --start-period=30s \
+#   CMD curl --fail http://localhost:8080 || exit 1
