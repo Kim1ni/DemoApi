@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kobweb.application)
+    alias(libs.plugins.serialization.plugin)
     // alias(libs.plugins.kobwebx.markdown)
 }
 
@@ -22,11 +23,10 @@ kotlin {
     configAsKobwebApplication("demoapi", includeServer = true)
 
     sourceSets {
-//        commonMain.dependencies {
-//          // Add shared dependencies between JS and JVM here
-//        }
-        jsMain.dependencies {
+        commonMain.dependencies {
             implementation(libs.compose.runtime)
+        }
+        jsMain.dependencies {
             implementation(libs.compose.html.core)
             implementation(libs.kobweb.core)
             implementation(libs.kobweb.silk)
@@ -36,6 +36,7 @@ kotlin {
         }
         jvmMain.dependencies {
             compileOnly(libs.kobweb.api) // Provided by Kobweb backend at runtime
+            implementation(libs.kotlinx.serialization)
         }
     }
 }
